@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceStudio — AI Text to Speech</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0c10;--surface:#13131a;--s2:#1a1a24;--s3:#21212e;
+  --b1:rgba(255,255,255,0.07);--b2:rgba(255,255,255,0.13);
+  --acc:#e8c97a;--acc2:#c4a855;
+  --txt:#f0ede8;--txt2:#9996a0;--txt3:#5e5c6a;
+  --err:#e07070;--ok:#70c9a0;--inf:#7ab8e8;
+  --mono:'DM Mono',monospace;--serif:'Fraunces',serif;
+  --r:10px;--rl:16px;
+}
+html,body{background:var(--bg);color:var(--txt);font-family:var(--mono);font-size:14px;min-height:100vh}
+body{display:flex;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;border-bottom:1px solid var(--b1);position:sticky;top:0;background:rgba(12,12,16,0.95);backdrop-filter:blur(16px);z-index:200}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center;font-size:16px}
+.logo-text{font-family:var(--serif);font-size:19px;font-weight:500;letter-spacing:-0.02em}
+.logo-text em{color:var(--acc);font-style:normal}
+.badge{font-size:10px;padding:4px 10px;background:var(--s2);border:1px solid var(--b2);border-radius:20px;color:var(--txt2);letter-spacing:0.07em}
+main{display:grid;grid-template-columns:370px 1fr;flex:1}
+.left{border-right:1px solid var(--b1);padding:24px 20px;overflow-y:auto;height:calc(100vh - 61px);position:sticky;top:61px;display:flex;flex-direction:column;gap:20px}
+.right{padding:24px 28px;overflow-y:auto;height:calc(100vh - 61px)}
+.lbl{font-size:10px;font-weight:500;color:var(--txt3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px}
+.mode-row{display:flex;gap:6px}
+.mode-btn{flex:1;padding:10px 6px;border:1px solid var(--b1);border-radius:var(--r);background:var(--s2);color:var(--txt2);font-family:var(--mono);font-size:11px;cursor:pointer;text-align:center;transition:all .18s;line-height:1.5}
+.mode-btn:hover{border-color:var(--b2);color:var(--txt)}
+.mode-btn.active{border-color:var(--acc);background:rgba(232,201,122,.1);color:var(--acc)}
+.mode-btn .mbig{font-size:13px;font-weight:500;display:block}
+.mode-btn .msub{font-size:9px;color:inherit;opacity:0.7;margin-top:1px}
+.field{width:100%;padding:10px 13px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);color:var(--txt);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .2s}
+.field:focus{border-color:var(--acc)}
+.field::placeholder{color:var(--txt3)}
+.bv-select{width:100%;padding:10px 13px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);color:var(--txt);font-family:var(--mono);font-size:12px;outline:none;cursor:pointer;transition:border-color .2s}
+.bv-select:focus{border-color:var(--acc)}
+.key-wrap{position:relative}
+.field-key{width:100%;padding:10px 38px 10px 13px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);color:var(--txt);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .2s}
+.field-key:focus{border-color:var(--acc)}
+.field-key::placeholder{color:var(--txt3)}
+.eye-btn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--txt3);font-size:14px;padding:2px}
+.kstatus{display:flex;align-items:center;gap:6px;font-size:11px;margin-top:5px;color:var(--txt3)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--txt3);flex-shrink:0}
+.dot.ok{background:var(--ok)}.dot.err{background:var(--err)}
+.hint{font-size:10px;color:var(--txt3);margin-top:4px;line-height:1.5}
+.hint a{color:var(--acc);text-decoration:none}
+.model-row{display:flex;gap:6px}
+.mbtn{flex:1;padding:7px 4px;border:1px solid var(--b1);border-radius:var(--r);background:var(--s2);color:var(--txt2);font-family:var(--mono);font-size:10px;cursor:pointer;text-align:center;transition:all .15s;line-height:1.4}
+.mbtn:hover{border-color:var(--b2);color:var(--txt)}
+.mbtn.active{border-color:var(--acc);background:rgba(232,201,122,.08);color:var(--acc)}
+.voice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.vc{padding:10px 6px;border-radius:var(--r);border:1px solid var(--b1);background:var(--s2);cursor:pointer;text-align:center;transition:all .18s}
+.vc:hover{border-color:var(--b2);background:var(--s3)}
+.vc.sel{border-color:var(--acc);background:rgba(232,201,122,.08)}
+.vc .vi{font-size:18px;margin-bottom:3px}
+.vc .vn{font-size:11px;font-weight:500;color:var(--txt)}
+.vc .vd{font-size:9px;color:var(--txt3);margin-top:2px;line-height:1.3}
+.vc.sel .vn{color:var(--acc)}
+.srow{display:flex;align-items:center;gap:10px}
+.srow label{font-size:11px;color:var(--txt2);min-width:48px}
+.srow input[type=range]{flex:1;-webkit-appearance:none;height:3px;border-radius:2px;background:var(--s3);outline:none;cursor:pointer}
+.srow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--acc);cursor:pointer;border:2px solid var(--bg)}
+.sval{font-size:11px;color:var(--acc);min-width:30px;text-align:right}
+.tw{position:relative}
+textarea{width:100%;min-height:140px;max-height:260px;padding:12px 13px;resize:vertical;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);color:var(--txt);font-family:var(--mono);font-size:13px;line-height:1.7;outline:none;transition:border-color .2s}
+textarea:focus{border-color:var(--acc)}
+textarea::placeholder{color:var(--txt3)}
+.cc{position:absolute;bottom:8px;right:10px;font-size:10px;color:var(--txt3)}
+.cc.warn{color:var(--err)}
+.toast{padding:10px 13px;border-radius:var(--r);font-size:11px;line-height:1.5;display:none;margin-top:-4px}
+.toast.err{display:block;background:rgba(224,112,112,.12);border:1px solid rgba(224,112,112,.3);color:var(--err)}
+.toast.ok{display:block;background:rgba(112,201,160,.12);border:1px solid rgba(112,201,160,.3);color:var(--ok)}
+.toast.info{display:block;background:rgba(122,184,232,.12);border:1px solid rgba(122,184,232,.3);color:var(--inf)}
+.genbtn{width:100%;padding:13px;background:var(--acc);color:var(--bg);border:none;border-radius:var(--r);font-family:var(--mono);font-size:13px;font-weight:500;cursor:pointer;letter-spacing:.04em;transition:all .18s;display:flex;align-items:center;justify-content:center;gap:8px}
+.genbtn:hover:not(:disabled){background:#f0d48a;transform:translateY(-1px)}
+.genbtn:disabled{opacity:.4;cursor:default;transform:none}
+.spin{width:14px;height:14px;border:2px solid rgba(0,0,0,.25);border-top-color:var(--bg);border-radius:50%;animation:spin .7s linear infinite;display:none;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.rhead h2{font-family:var(--serif);font-size:22px;font-weight:300}
+.libcount{font-size:10px;padding:4px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:20px;color:var(--txt2)}
+.search{width:100%;padding:10px 13px;background:var(--surface);border:1px solid var(--b1);border-radius:var(--r);color:var(--txt);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .2s;margin-bottom:16px}
+.search:focus{border-color:var(--b2)}
+.search::placeholder{color:var(--txt3)}
+.empty{text-align:center;padding:60px 20px;color:var(--txt3)}
+.empty .ei{font-size:44px;margin-bottom:14px;opacity:.35}
+.empty .et{font-family:var(--serif);font-size:17px;font-weight:300;color:var(--txt2);margin-bottom:6px}
+.empty .es{font-size:11px;line-height:1.7}
+.clips{display:flex;flex-direction:column;gap:11px}
+.card{background:var(--surface);border:1px solid var(--b1);border-radius:var(--rl);padding:15px 16px;transition:border-color .2s;animation:slideIn .3s ease}
+.card:hover{border-color:var(--b2)}
+.card.playing{border-color:var(--acc);box-shadow:0 0 0 1px rgba(232,201,122,.08)}
+@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.cname{font-size:13px;font-weight:500;color:var(--txt);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ctags{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tag{font-size:10px;padding:2px 7px;border-radius:20px;border:1px solid var(--b1);color:var(--txt3);background:var(--s2)}
+.tag.v{color:var(--acc);border-color:rgba(232,201,122,.25);background:rgba(232,201,122,.06)}
+.tag.f{color:var(--ok);border-color:rgba(112,201,160,.25);background:rgba(112,201,160,.06)}
+.cprev{font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.wfwrap{position:relative;margin-bottom:6px;cursor:pointer;border-radius:6px;overflow:hidden}
+canvas.wf{width:100%;height:42px;display:block;background:var(--s2)}
+.prog{position:absolute;top:0;left:0;height:100%;background:rgba(232,201,122,.09);pointer-events:none;width:0%}
+.trow{display:flex;justify-content:space-between;font-size:10px;color:var(--txt3);margin-bottom:10px}
+.cctrl{display:flex;align-items:center;gap:7px}
+.cbtn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:1px solid var(--b1);background:var(--s2);color:var(--txt2);cursor:pointer;font-size:13px;transition:all .15s;flex-shrink:0}
+.cbtn:hover{border-color:var(--b2);color:var(--txt);background:var(--s3)}
+.cbtn.play{width:38px;height:38px;background:var(--acc);border-color:var(--acc);color:var(--bg);font-size:14px}
+.cbtn.play:hover{background:#f0d48a}
+.cbtn.del:hover{border-color:rgba(224,112,112,.4);color:var(--err)}
+.spills{display:flex;gap:3px;margin-left:2px}
+.spill{font-size:10px;padding:3px 7px;border-radius:20px;border:1px solid var(--b1);background:var(--s2);color:var(--txt3);cursor:pointer;transition:all .12s}
+.spill.active{border-color:var(--acc);color:var(--acc);background:rgba(232,201,122,.08)}
+.spill:hover:not(.active){border-color:var(--b2);color:var(--txt2)}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--s3);border-radius:2px}
+footer{text-align:center;padding:12px;font-size:10px;color:var(--txt3);border-top:1px solid var(--b1)}
+@media(max-width:760px){main{grid-template-columns:1fr}.left{height:auto;position:static}.right{height:auto}}
+
+.ctextblock{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 12px;margin-bottom:12px}
+.ctextlabel{font-size:9px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--txt3);margin-bottom:6px}
+.ctextbody{font-size:12px;color:var(--txt);line-height:1.75;white-space:pre-wrap;word-break:break-word;transition:max-height 0.3s ease}
+.showall{margin-top:7px;display:block;width:100%;background:none;border:none;font-family:var(--mono);font-size:10px;color:var(--txt3);cursor:pointer;text-align:left;padding:0;transition:color .15s}
+.showall:hover{color:var(--acc)}
+.savebtn{display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--r);border:1px solid rgba(112,201,160,.3);background:rgba(112,201,160,.08);color:var(--ok);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.savebtn:hover{background:rgba(112,201,160,.15);border-color:rgba(112,201,160,.5)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">🎙</div>
+    <span class="logo-text">Voice<em>Studio</em></span>
+  </div>
+  <span class="badge">US ENGLISH · HD AUDIO</span>
+</header>
+<main>
+<div class="left">
+  <div>
+    <div class="lbl">Mode</div>
+    <div class="mode-row">
+      <button class="mode-btn active" id="modeFree" onclick="setMode('free')">
+        <span class="mbig">🆓 Browser TTS</span>
+        <span class="msub">Free · No key needed · Works now</span>
+      </button>
+      <button class="mode-btn" id="modeAI" onclick="setMode('ai')">
+        <span class="mbig">✨ OpenAI HD</span>
+        <span class="msub">Best quality · Needs API key</span>
+      </button>
+    </div>
+  </div>
+  <div id="freeModePanel">
+    <div class="lbl">US English Voice</div>
+    <select class="bv-select" id="bvSel"><option value="">Loading voices…</option></select>
+    <p class="hint" style="margin-top:6px">Chrome gives the best neural US voices. Firefox & Safari also work.</p>
+  </div>
+  <div id="aiModePanel" style="display:none;flex-direction:column;gap:16px">
+    <div>
+      <div class="lbl">OpenAI API Key</div>
+      <div class="key-wrap">
+        <input class="field-key" id="apiKey" type="password" placeholder="sk-proj-..." autocomplete="off">
+        <button class="eye-btn" id="eyeBtn">👁</button>
+      </div>
+      <div class="kstatus"><div class="dot" id="kDot"></div><span id="kTxt">Paste your key above</span></div>
+      <p class="hint">Key stays in this tab only. Get one at <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a></p>
+      <button onclick="testKey()" style="margin-top:8px;width:100%;padding:8px;background:var(--s3);border:1px solid var(--b2);border-radius:var(--r);color:var(--txt2);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--txt)'" onmouseout="this.style.color='var(--txt2)'">🔍 Test API Key Connection</button>
+      <div id="testResult" style="display:none;margin-top:8px;padding:10px 13px;border-radius:var(--r);font-size:11px;line-height:1.6"></div>
+    </div>
+    <div>
+      <div class="lbl">Model quality</div>
+      <div class="model-row">
+        <button class="mbtn active" data-m="tts-1-hd" onclick="selModel(this)">tts-1-hd<br><span style="color:var(--txt3)">highest quality</span></button>
+        <button class="mbtn" data-m="tts-1" onclick="selModel(this)">tts-1<br><span style="color:var(--txt3)">faster/cheaper</span></button>
+      </div>
+    </div>
+    <div>
+      <div class="lbl">Voice — US English</div>
+      <div class="voice-grid">
+        <div class="vc sel" data-v="nova" onclick="selVoice(this)"><div class="vi">👩</div><div class="vn">Nova</div><div class="vd">warm female</div></div>
+        <div class="vc" data-v="alloy" onclick="selVoice(this)"><div class="vi">🧑</div><div class="vn">Alloy</div><div class="vd">neutral clear</div></div>
+        <div class="vc" data-v="shimmer" onclick="selVoice(this)"><div class="vi">✨</div><div class="vn">Shimmer</div><div class="vd">bright lively</div></div>
+        <div class="vc" data-v="echo" onclick="selVoice(this)"><div class="vi">👨</div><div class="vn">Echo</div><div class="vd">deep male</div></div>
+        <div class="vc" data-v="onyx" onclick="selVoice(this)"><div class="vi">🎤</div><div class="vn">Onyx</div><div class="vd">authoritative</div></div>
+        <div class="vc" data-v="fable" onclick="selVoice(this)"><div class="vi">📖</div><div class="vn">Fable</div><div class="vd">storytelling</div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="lbl">Speed</div>
+    <div class="srow">
+      <label>Speed</label>
+      <input type="range" id="spd" min="0.5" max="1.5" step="0.05" value="1.0" oninput="document.getElementById('spdV').textContent=parseFloat(this.value).toFixed(2)+'×'">
+      <span class="sval" id="spdV">1.00×</span>
+    </div>
+  </div>
+  <div>
+    <div class="lbl">Clip title (optional)</div>
+    <input class="field" id="clipTitle" type="text" placeholder="e.g. Slide 1 – Introduction">
+  </div>
+  <div>
+    <div class="lbl">Text — Ctrl+Enter to generate</div>
+    <div class="tw">
+      <textarea id="txt" placeholder="Type or paste your text here…" maxlength="4096" oninput="onTxt(this)"></textarea>
+      <span class="cc" id="cc">0 / 4096</span>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <button class="genbtn" id="genBtn" onclick="generate()">
+    <div class="spin" id="spin"></div>
+    <span id="genLabel">▶ Generate Audio</span>
+  </button>
+</div>
+<div class="right">
+  <div class="rhead"><h2>Audio Library</h2><span class="libcount" id="libCount">0 clips</span></div>
+  <input class="search" type="text" placeholder="Search clips…" oninput="filterClips(this.value)">
+  <div id="clipList">
+    <div class="empty" id="emptyState">
+      <div class="ei">🎙</div>
+      <div class="et">No clips yet</div>
+      <div class="es">Start with <strong style="color:var(--acc)">Free Browser mode</strong> — works instantly!<br>Paste text → click Generate → click ▶ to hear.<br><br>For download-quality MP3, switch to OpenAI HD mode.</div>
+    </div>
+    <div class="clips" id="clips"></div>
+  </div>
+</div>
+</main>
+<footer>VoiceStudio · Free Browser TTS (always works) + OpenAI HD TTS (downloadable MP3) · US English</footer>
+<script>
+let mode='free',aiVoice='nova',aiModel='tts-1-hd';
+let clips=[],idC=0,activeAudio=null,activeId=null;
+const audioEls={},pSpeeds={};
+let browserVoices=[],activeSynth=null;
+
+function setMode(m){
+  mode=m;
+  document.getElementById('modeFree').classList.toggle('active',m==='free');
+  document.getElementById('modeAI').classList.toggle('active',m==='ai');
+  document.getElementById('freeModePanel').style.display=m==='free'?'':'none';
+  document.getElementById('aiModePanel').style.display=m==='ai'?'flex':'none';
+}
+
+function loadBV(){
+  const all=speechSynthesis.getVoices();
+  const us=all.filter(v=>v.lang==='en-US'||v.lang==='en_US');
+  const sel=document.getElementById('bvSel');
+  sel.innerHTML='';
+  if(!us.length){sel.innerHTML='<option value="">No US voices — try Chrome</option>';return;}
+  us.sort((a,b)=>b.name.toLowerCase().includes('google')-a.name.toLowerCase().includes('google'));
+  us.forEach(v=>{const o=document.createElement('option');o.value=v.name;o.textContent=v.name+(v.localService?'':' ◦');sel.appendChild(o);});
+  browserVoices=us;
+}
+speechSynthesis.onvoiceschanged=loadBV;
+loadBV();setTimeout(loadBV,500);setTimeout(loadBV,1500);
+
+document.getElementById('apiKey').addEventListener('input',function(){
+  const v=this.value.trim();
+  const dot=document.getElementById('kDot'),kt=document.getElementById('kTxt');
+  if(!v){dot.className='dot';kt.textContent='Paste your key above';return;}
+  if(v.startsWith('sk-')){dot.className='dot ok';kt.textContent='Key format looks good ✓';}
+  else{dot.className='dot err';kt.textContent='Should start with sk-…';}
+});
+document.getElementById('eyeBtn').onclick=function(){const i=document.getElementById('apiKey');i.type=i.type==='password'?'text':'password';};
+function selModel(el){document.querySelectorAll('.mbtn').forEach(b=>b.classList.remove('active'));el.classList.add('active');aiModel=el.dataset.m;}
+function selVoice(el){document.querySelectorAll('.vc').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');aiVoice=el.dataset.v;}
+function onTxt(el){const n=el.value.length;const cc=document.getElementById('cc');cc.textContent=n+' / 4096';cc.className='cc'+(n>3800?' warn':'');}
+
+function showToast(msg,type='err'){const t=document.getElementById('toast');t.textContent=msg;t.className='toast '+type;clearTimeout(t._t);t._t=setTimeout(()=>{t.className='toast';},6000);}
+
+async function generate(){
+  const text=document.getElementById('txt').value.trim();
+  if(!text){showToast('Please enter some text first.');return;}
+  const btn=document.getElementById('genBtn'),spin=document.getElementById('spin'),lbl=document.getElementById('genLabel');
+  btn.disabled=true;spin.style.display='block';lbl.textContent='Generating…';
+  document.getElementById('toast').className='toast';
+  try{
+    if(mode==='free') await genBrowser(text);
+    else await genAI(text);
+  }finally{btn.disabled=false;spin.style.display='none';lbl.textContent='▶ Generate Audio';}
+}
+
+function genBrowser(text){
+  return new Promise((resolve)=>{
+    const voiceName=document.getElementById('bvSel').value;
+    const voice=browserVoices.find(v=>v.name===voiceName)||browserVoices[0];
+    if(!voice){showToast('No US English voice found. Please use Chrome.');resolve();return;}
+    const title=document.getElementById('clipTitle').value.trim()||text.substring(0,50)+(text.length>50?'…':'');
+    const clip={id:++idC,title,text,voice:voice.name.substring(0,22),model:'Browser TTS',isBrowser:true,speed:parseFloat(document.getElementById('spd').value),voiceObj:voice,date:new Date()};
+    addClip(clip);
+    showToast('Clip added! Click ▶ to play.','ok');
+    document.getElementById('txt').value='';
+    document.getElementById('clipTitle').value='';
+    document.getElementById('cc').textContent='0 / 4096';
+    resolve();
+  });
+}
+
+/* ── Netlify function proxy ── */
+async function ttsRequest(key, payload){
+  return fetch('/.netlify/functions/tts',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Api-Key':key},
+    body:JSON.stringify(payload)
+  });
+}
+
+function showCorsHelp(){
+  const tr=document.getElementById('testResult');
+  tr.style.display='block';
+  tr.style.background='rgba(224,112,112,.1)';
+  tr.style.border='1px solid rgba(224,112,112,.25)';
+  tr.style.color='var(--err)';
+  tr.innerHTML='❌ Could not reach server. Make sure this site is deployed on Netlify — it does not work when opened as a local file.';
+}
+
+async function genAI(text){
+  const key=document.getElementById('apiKey').value.trim();
+  if(!key){showToast('Please enter your OpenAI API key.');return;}
+  if(!key.startsWith('sk-')){showToast('API key should start with sk-… or sk-proj-…');return;}
+  if(text.length>4096){showToast('Text too long. Max 4096 characters.');return;}
+  const spd=parseFloat(document.getElementById('spd').value);
+  let res;
+  try{
+    res=await ttsRequest(key,{model:aiModel,input:text,voice:aiVoice,speed:spd,response_format:'mp3'});
+  }catch(e){
+    showToast('❌ Cannot reach API: '+e.message);
+    showCorsHelp();
+    return;
+  }
+  if(!res.ok){
+    let em='';let fullErr='';
+    try{const j=await res.json();em=j?.error?.message||'';fullErr=JSON.stringify(j,null,2);}catch(_){}
+    let friendly='';
+    if(res.status===401) friendly='🔑 Invalid or expired key → platform.openai.com/api-keys → create new key';
+    else if(res.status===403) friendly='🚫 TTS not permitted on this key → check project permissions at platform.openai.com';
+    else if(res.status===429) friendly='⏳ Billing issue → add payment at platform.openai.com/account/billing';
+    else if(res.status===400) friendly='⚠️ Bad request: '+(em||'text too long or unsupported characters');
+    else friendly='❌ API error '+res.status+': '+em;
+    showToast(friendly);
+    document.getElementById('kDot').className='dot err';
+    const tr=document.getElementById('testResult');
+    tr.style.display='block';tr.style.background='rgba(224,112,112,.1)';tr.style.border='1px solid rgba(224,112,112,.25)';tr.style.color='var(--err)';
+    tr.innerHTML='<strong>OpenAI error:</strong><br><pre style="margin-top:6px;font-size:10px;white-space:pre-wrap;word-break:break-all">'+esc(fullErr||'HTTP '+res.status)+'</pre>';
+    return;
+  }
+  const blob=await res.blob();
+  const blobUrl=URL.createObjectURL(blob);
+  const title=document.getElementById('clipTitle').value.trim()||text.substring(0,50)+(text.length>50?'…':'');
+  addClip({id:++idC,title,text,voice:aiVoice,model:aiModel,isBrowser:false,url:blobUrl,blob,speed:spd,date:new Date()});
+  showToast('HD audio generated!','ok');
+  document.getElementById('testResult').style.display='none';
+  document.getElementById('txt').value='';
+  document.getElementById('clipTitle').value='';
+  document.getElementById('cc').textContent='0 / 4096';
+}
+
+async function testKey(){
+  const key=document.getElementById('apiKey').value.trim();
+  const tr=document.getElementById('testResult');
+  if(!key){tr.style.display='block';tr.style.background='rgba(224,112,112,.1)';tr.style.border='1px solid rgba(224,112,112,.25)';tr.style.color='var(--err)';tr.innerHTML='Enter your API key first.';return;}
+  tr.style.display='block';tr.style.background='rgba(122,184,232,.1)';tr.style.border='1px solid rgba(122,184,232,.25)';tr.style.color='var(--inf)';
+  tr.innerHTML= IS_PROXY ? '🔍 Testing via local proxy…' : '🔍 Testing direct connection…';
+  try{
+    const r2=await ttsRequest(key,{model:'tts-1',input:'hello',voice:'nova',response_format:'mp3'});
+    if(r2.ok){
+      tr.style.background='rgba(112,201,160,.1)';tr.style.border='1px solid rgba(112,201,160,.25)';tr.style.color='var(--ok)';
+      tr.innerHTML='✅ <strong>Working!</strong> API key + TTS confirmed. Click Generate Audio.';
+      document.getElementById('kDot').className='dot ok';
+    }else{
+      const j=await r2.json().catch(()=>({}));
+      const msg=j?.error?.message||'Unknown';
+      let hint='';
+      if(r2.status===401) hint='<br>→ Go to <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--err)">platform.openai.com/api-keys</a>, create a new key.';
+      if(r2.status===403) hint='<br>→ Your key exists but <strong>TTS is disabled</strong>. At platform.openai.com → your project → API permissions → enable Audio.';
+      if(r2.status===429) hint='<br>→ <a href="https://platform.openai.com/account/billing" target="_blank" style="color:var(--err)">Add billing</a> to your OpenAI account.';
+      tr.style.background='rgba(224,112,112,.1)';tr.style.border='1px solid rgba(224,112,112,.25)';tr.style.color='var(--err)';
+      tr.innerHTML='❌ Error '+r2.status+': '+esc(msg)+hint;
+      document.getElementById('kDot').className='dot err';
+    }
+  }catch(e){
+    showCorsHelp();
+  }
+}
+
+
+function toggleText(id){
+  const el=document.getElementById('ctxt-'+id);
+  const btn=document.getElementById('showbtn-'+id);
+  if(!el||!btn) return;
+  if(el.style.maxHeight){
+    el.style.maxHeight='';el.style.overflow='';
+    btn.textContent='show less ▴';
+  } else {
+    el.style.maxHeight='72px';el.style.overflow='hidden';
+    btn.textContent='show full text ▾';
+  }
+}
+
+function addClip(clip){clips.unshift(clip);updCount();renderClips(clips);}
+function updCount(){const n=clips.length;document.getElementById('libCount').textContent=n+(n===1?' clip':' clips');}
+
+function renderClips(list){
+  const ct=document.getElementById('clips');
+  document.getElementById('emptyState').style.display=list.length?'none':'';
+  ct.innerHTML='';
+  list.forEach(clip=>{
+    const card=document.createElement('div');
+    card.className='card'+(activeId===clip.id?' playing':'');
+    card.id='card-'+clip.id;
+    const tagC=clip.isBrowser?'tag f':'tag v';
+    const shortText = clip.text.length > 120;
+    card.innerHTML=`
+      <div class="cname" title="${esc(clip.title)}">${esc(clip.title)}</div>
+      <div class="ctags">
+        <span class="${tagC}">${esc(clip.voice)}</span>
+        <span class="tag">${clip.model}</span>
+        <span class="tag">${clip.speed}×</span>
+        <span class="tag">${fmtDate(clip.date)}</span>
+      </div>
+      <div class="ctextblock">
+        <div class="ctextlabel">Text</div>
+        <div class="ctextbody" id="ctxt-${clip.id}" style="${shortText?'max-height:72px;overflow:hidden':''}">${esc(clip.text)}</div>
+        ${shortText?`<button class="showall" id="showbtn-${clip.id}" onclick="toggleText(${clip.id})">show full text ▾</button>`:''}
+      </div>
+      ${clip.isBrowser?`<div class="trow" style="margin-bottom:10px"><span style="color:var(--txt3)">Browser TTS · click ▶ to play</span></div>`:`
+      <div class="wfwrap" onclick="seekAudio(event,${clip.id})">
+        <canvas class="wf" id="wf-${clip.id}" height="42"></canvas>
+        <div class="prog" id="prog-${clip.id}"></div>
+      </div>
+      <div class="trow"><span id="cur-${clip.id}">0:00</span><span id="dur-${clip.id}">–:––</span></div>`}
+      <div class="cctrl">
+        <button class="cbtn play" id="pbtn-${clip.id}" onclick="togglePlay(${clip.id})">▶</button>
+        <button class="cbtn" onclick="stopClip(${clip.id})" title="Stop">■</button>
+        <div class="spills" id="sp-${clip.id}">
+          ${[0.75,1.0,1.25].map(s=>`<button class="spill${s===1.0?' active':''}" onclick="setPSpd(${clip.id},${s},this)">${s}×</button>`).join('')}
+        </div>
+        <span style="flex:1"></span>
+        ${!clip.isBrowser?`<button class="savebtn" onclick="dlClip(${clip.id})">💾 Save MP3</button>`:''}
+        <button class="cbtn del" onclick="delClip(${clip.id})" title="Delete">✕</button>
+      </div>`;
+    ct.appendChild(card);
+    if(!clip.isBrowser) drawWaveform(clip);
+  });
+}
+
+async function drawWaveform(clip){
+  await new Promise(r=>setTimeout(r,60));
+  const canvas=document.getElementById('wf-'+clip.id);
+  if(!canvas||!clip.blob)return;
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const buf=await clip.blob.arrayBuffer();
+    const decoded=await ctx.decodeAudioData(buf);
+    const data=decoded.getChannelData(0);
+    const W=canvas.offsetWidth||300;
+    canvas.width=W*2;canvas.height=84;
+    const c=canvas.getContext('2d');
+    const step=Math.floor(data.length/W);
+    for(let i=0;i<W;i++){
+      let mx=0;
+      for(let j=0;j<step;j++){const v=Math.abs(data[i*step+j]);if(v>mx)mx=v;}
+      const h=Math.max(2,mx*75);
+      c.fillStyle='rgba(232,201,122,0.5)';
+      c.fillRect(i*2,(84-h)/2,1.5,h);
+    }
+    ctx.close();
+  }catch(e){}
+}
+
+function getAudio(id){
+  const clip=clips.find(c=>c.id===id);
+  if(!clip||clip.isBrowser)return null;
+  if(!audioEls[id]){
+    const a=new Audio(clip.url);
+    a.addEventListener('timeupdate',()=>updProg(id,a));
+    a.addEventListener('loadedmetadata',()=>{const d=document.getElementById('dur-'+id);if(d)d.textContent=fmtS(a.duration);});
+    a.addEventListener('ended',()=>{
+      const b=document.getElementById('pbtn-'+id);if(b)b.innerHTML='▶';
+      const p=document.getElementById('prog-'+id);if(p)p.style.width='0%';
+      const c2=document.getElementById('cur-'+id);if(c2)c2.textContent='0:00';
+      document.getElementById('card-'+id)?.classList.remove('playing');
+      if(activeId===id){activeId=null;activeAudio=null;}
+    });
+    audioEls[id]=a;
+  }
+  return audioEls[id];
+}
+
+function togglePlay(id){
+  const clip=clips.find(c=>c.id===id);if(!clip)return;
+  if(activeId&&activeId!==id){
+    if(activeSynth){speechSynthesis.cancel();activeSynth=null;}
+    if(activeAudio){activeAudio.pause();}
+    const pb=document.getElementById('pbtn-'+activeId);if(pb)pb.innerHTML='▶';
+    document.getElementById('card-'+activeId)?.classList.remove('playing');
+  }
+  if(clip.isBrowser){
+    if(activeSynth&&activeId===id&&speechSynthesis.speaking){
+      if(!speechSynthesis.paused){speechSynthesis.pause();document.getElementById('pbtn-'+id).innerHTML='▶';return;}
+      else{speechSynthesis.resume();document.getElementById('pbtn-'+id).innerHTML='⏸';return;}
+    }
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(clip.text);
+    if(clip.voiceObj)u.voice=clip.voiceObj;
+    u.lang='en-US';u.rate=pSpeeds[id]||clip.speed;u.pitch=1.0;u.volume=1.0;
+    u.onstart=()=>{document.getElementById('pbtn-'+id).innerHTML='⏸';document.getElementById('card-'+id)?.classList.add('playing');};
+    u.onend=()=>{document.getElementById('pbtn-'+id).innerHTML='▶';document.getElementById('card-'+id)?.classList.remove('playing');if(activeId===id){activeId=null;activeSynth=null;}};
+    u.onerror=(e)=>{document.getElementById('pbtn-'+id).innerHTML='▶';showToast('Speech error: '+e.error);};
+    speechSynthesis.speak(u);
+    activeSynth=u;activeId=id;
+  }else{
+    const a=getAudio(id);if(!a)return;
+    if(a.paused){
+      a.playbackRate=pSpeeds[id]||1.0;a.play();
+      document.getElementById('pbtn-'+id).innerHTML='⏸';
+      document.getElementById('card-'+id)?.classList.add('playing');
+      activeAudio=a;activeId=id;activeSynth=null;
+    }else{
+      a.pause();document.getElementById('pbtn-'+id).innerHTML='▶';
+      document.getElementById('card-'+id)?.classList.remove('playing');
+    }
+  }
+}
+
+function stopClip(id){
+  const clip=clips.find(c=>c.id===id);if(!clip)return;
+  if(clip.isBrowser){speechSynthesis.cancel();if(activeId===id){activeSynth=null;activeId=null;}}
+  else{const a=audioEls[id];if(a){a.pause();a.currentTime=0;}const p=document.getElementById('prog-'+id);if(p)p.style.width='0%';const c2=document.getElementById('cur-'+id);if(c2)c2.textContent='0:00';if(activeId===id){activeAudio=null;activeId=null;}}
+  const b=document.getElementById('pbtn-'+id);if(b)b.innerHTML='▶';
+  document.getElementById('card-'+id)?.classList.remove('playing');
+}
+
+function setPSpd(id,s,el){pSpeeds[id]=s;const a=audioEls[id];if(a)a.playbackRate=s;document.querySelectorAll('#sp-'+id+' .spill').forEach(p=>p.classList.remove('active'));el.classList.add('active');}
+function seekAudio(e,id){const a=getAudio(id);if(!a||!a.duration)return;const rect=e.currentTarget.getBoundingClientRect();a.currentTime=((e.clientX-rect.left)/rect.width)*a.duration;}
+function updProg(id,a){const p=document.getElementById('prog-'+id);if(p)p.style.width=((a.currentTime/a.duration)*100).toFixed(1)+'%';const c2=document.getElementById('cur-'+id);if(c2)c2.textContent=fmtS(a.currentTime);}
+function dlClip(id){
+  const clip=clips.find(c=>c.id===id);if(!clip||clip.isBrowser)return;
+  const safeName=(clip.title.replace(/[^a-z0-9\s\-_]/gi,'').trim()||'audio_'+id);
+  const a=document.createElement('a');
+  a.href=clip.url;
+  a.download=safeName+'.mp3';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast('💾 Saving: '+safeName+'.mp3','ok');
+}
+function delClip(id){stopClip(id);clips=clips.filter(c=>c.id!==id);updCount();renderClips(clips);}
+function filterClips(q){const lq=q.toLowerCase();renderClips(clips.filter(c=>c.title.toLowerCase().includes(lq)||c.text.toLowerCase().includes(lq)||c.voice.toLowerCase().includes(lq)));}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtS(s){if(isNaN(s)||!isFinite(s))return'–:––';const m=Math.floor(s/60);return m+':'+(Math.floor(s%60)+'').padStart(2,'0');}
+function fmtDate(d){return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.key==='Enter'){e.preventDefault();generate();}
+  if(e.key===' '&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'&&e.target.tagName!=='BUTTON'&&activeId){e.preventDefault();togglePlay(activeId);}
+});
+</script>
+</body>
+</html>
