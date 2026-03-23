@@ -214,7 +214,14 @@ footer{text-align:center;padding:12px;font-size:10px;color:var(--txt3);border-to
   </button>
 </div>
 <div class="right">
-  <div class="rhead"><h2>Audio Library</h2><span class="libcount" id="libCount">0 clips</span></div>
+  <div class="rhead">
+    <h2>Audio Library</h2>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="libcount" id="libCount">0 clips</span>
+      <span id="dbBadge" style="font-size:10px;padding:4px 9px;background:rgba(112,201,160,.08);border:1px solid rgba(112,201,160,.2);border-radius:20px;color:var(--ok);display:none">💾 saved</span>
+      <button onclick="clearAll()" style="font-size:10px;padding:4px 10px;background:none;border:1px solid var(--b1);border-radius:20px;color:var(--txt3);cursor:pointer;font-family:var(--mono);transition:all .15s" onmouseover="this.style.color='var(--err)';this.style.borderColor='rgba(224,112,112,.4)'" onmouseout="this.style.color='var(--txt3)';this.style.borderColor='var(--b1)'">Clear all</button>
+    </div>
+  </div>
   <input class="search" type="text" placeholder="Search clips…" oninput="filterClips(this.value)">
   <div id="clipList">
     <div class="empty" id="emptyState">
@@ -232,6 +239,88 @@ let mode='free',aiVoice='nova',aiModel='tts-1-hd';
 let clips=[],idC=0,activeAudio=null,activeId=null;
 const audioEls={},pSpeeds={};
 let browserVoices=[],activeSynth=null;
+
+/* ══════════════════════════════════════
+   IndexedDB — persistent clip storage
+   Clips survive page refresh & offline
+   ══════════════════════════════════════ */
+const DB_NAME='VoiceStudioDB', DB_VER=1, STORE='clips';
+let db=null;
+
+function openDB(){
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open(DB_NAME,DB_VER);
+    req.onupgradeneeded=e=>{
+      const d=e.target.result;
+      if(!d.objectStoreNames.contains(STORE)){
+        d.createObjectStore(STORE,{keyPath:'id'});
+      }
+    };
+    req.onsuccess=e=>{db=e.target.result;res(db);};
+    req.onerror=e=>rej(e.target.error);
+  });
+}
+
+async function dbSave(clip){
+  if(!db)return;
+  return new Promise((res,rej)=>{
+    /* store blob directly — IndexedDB handles binary */
+    const record={
+      id:clip.id, title:clip.title, text:clip.text,
+      voice:clip.voice, model:clip.model, isBrowser:clip.isBrowser,
+      speed:clip.speed, date:clip.date.toISOString(),
+      blob: clip.isBrowser ? null : clip.blob
+    };
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).put(record);
+    tx.oncomplete=res; tx.onerror=e=>rej(e.target.error);
+  });
+}
+
+async function dbDelete(id){
+  if(!db)return;
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete=res; tx.onerror=e=>rej(e.target.error);
+  });
+}
+
+async function dbLoadAll(){
+  if(!db)return[];
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(STORE,'readonly');
+    const req=tx.objectStore(STORE).getAll();
+    req.onsuccess=e=>res(e.target.result||[]);
+    req.onerror=e=>rej(e.target.error);
+  });
+}
+
+async function initDB(){
+  try{
+    await openDB();
+    const saved=await dbLoadAll();
+    if(!saved.length)return;
+    /* restore clips — rebuild object URLs from stored blobs */
+    const restored=saved
+      .sort((a,b)=>new Date(b.date)-new Date(a.date))
+      .map(r=>({
+        id:r.id, title:r.title, text:r.text,
+        voice:r.voice, model:r.model, isBrowser:r.isBrowser,
+        speed:r.speed, date:new Date(r.date),
+        blob: r.blob||null,
+        url: r.blob ? URL.createObjectURL(r.blob) : null,
+        voiceObj: null
+      }));
+    clips=restored;
+    idC=Math.max(0,...restored.map(c=>c.id));
+    updCount();
+    renderClips(clips);
+    showToast('📂 '+clips.length+' saved clip'+(clips.length>1?'s':'')+' restored','ok');
+  }catch(e){
+    console.warn('IndexedDB init failed:',e);
+  }
+}
 
 function setMode(m){
   mode=m;
@@ -272,12 +361,14 @@ async function generate(){
   const text=document.getElementById('txt').value.trim();
   if(!text){showToast('Please enter some text first.');return;}
   const btn=document.getElementById('genBtn'),spin=document.getElementById('spin'),lbl=document.getElementById('genLabel');
-  btn.disabled=true;spin.style.display='block';lbl.textContent='Generating…';
+  btn.disabled=true; spin.style.display='block'; lbl.textContent='Generating…';
   document.getElementById('toast').className='toast';
   try{
     if(mode==='free') await genBrowser(text);
     else await genAI(text);
-  }finally{btn.disabled=false;spin.style.display='none';lbl.textContent='▶ Generate Audio';}
+  }finally{
+    btn.disabled=false; spin.style.display='none'; lbl.textContent='▶ Generate Audio';
+  }
 }
 
 function genBrowser(text){
@@ -317,42 +408,107 @@ function showCorsHelp(){
 async function genAI(text){
   const key=document.getElementById('apiKey').value.trim();
   if(!key){showToast('Please enter your OpenAI API key.');return;}
-  if(!key.startsWith('sk-')){showToast('API key should start with sk-… or sk-proj-…');return;}
-  if(text.length>4096){showToast('Text too long. Max 4096 characters.');return;}
+  if(!key.startsWith('sk-')){showToast('API key should start with sk-…');return;}
+
   const spd=parseFloat(document.getElementById('spd').value);
-  let res;
-  try{
-    res=await ttsRequest(key,{model:aiModel,input:text,voice:aiVoice,speed:spd,response_format:'mp3'});
-  }catch(e){
-    showToast('❌ Cannot reach API: '+e.message);
-    showCorsHelp();
-    return;
-  }
-  if(!res.ok){
-    let em='';let fullErr='';
-    try{const j=await res.json();em=j?.error?.message||'';fullErr=JSON.stringify(j,null,2);}catch(_){}
-    let friendly='';
-    if(res.status===401) friendly='🔑 Invalid or expired key → platform.openai.com/api-keys → create new key';
-    else if(res.status===403) friendly='🚫 TTS not permitted on this key → check project permissions at platform.openai.com';
-    else if(res.status===429) friendly='⏳ Billing issue → add payment at platform.openai.com/account/billing';
-    else if(res.status===400) friendly='⚠️ Bad request: '+(em||'text too long or unsupported characters');
-    else friendly='❌ API error '+res.status+': '+em;
-    showToast(friendly);
-    document.getElementById('kDot').className='dot err';
-    const tr=document.getElementById('testResult');
-    tr.style.display='block';tr.style.background='rgba(224,112,112,.1)';tr.style.border='1px solid rgba(224,112,112,.25)';tr.style.color='var(--err)';
-    tr.innerHTML='<strong>OpenAI error:</strong><br><pre style="margin-top:6px;font-size:10px;white-space:pre-wrap;word-break:break-all">'+esc(fullErr||'HTTP '+res.status)+'</pre>';
-    return;
-  }
-  const blob=await res.blob();
-  const blobUrl=URL.createObjectURL(blob);
   const title=document.getElementById('clipTitle').value.trim()||text.substring(0,50)+(text.length>50?'…':'');
-  addClip({id:++idC,title,text,voice:aiVoice,model:aiModel,isBrowser:false,url:blobUrl,blob,speed:spd,date:new Date()});
-  showToast('HD audio generated!','ok');
+
+  /* ── split text into chunks ≤ 400 chars at sentence boundaries ── */
+  const chunks = splitText(text, 400);
+  const total = chunks.length;
+
+  const btn=document.getElementById('genBtn');
+  const spin=document.getElementById('spin');
+  const lbl=document.getElementById('genLabel');
+
+  document.getElementById('toast').className='toast';
+  document.getElementById('testResult').style.display='none';
+
+  /* progress */
+  const showProgress = (i) => {
+    if(total > 1) showToast(`Generating part ${i} of ${total}…`, 'info');
+  };
+
+  const blobs = [];
+  for(let i=0; i<chunks.length; i++){
+    showProgress(i+1);
+    lbl.textContent = total>1 ? `Generating ${i+1}/${total}…` : 'Generating…';
+    let res;
+    try{
+      res = await ttsRequest(key,{model:aiModel, input:chunks[i], voice:aiVoice, speed:spd, response_format:'mp3'});
+    }catch(e){
+      showToast('❌ Network error: '+e.message);
+      btn.disabled=false; spin.style.display='none'; lbl.textContent='▶ Generate Audio';
+      return;
+    }
+    if(!res.ok){
+      let em=''; let fullErr='';
+      try{const j=await res.json(); em=j?.error?.message||''; fullErr=JSON.stringify(j,null,2);}catch(_){}
+      let friendly='';
+      if(res.status===401) friendly='🔑 Invalid key → platform.openai.com/api-keys';
+      else if(res.status===403) friendly='🚫 TTS not permitted → check project permissions';
+      else if(res.status===429) friendly='⏳ Billing issue → platform.openai.com/account/billing';
+      else if(res.status===504) friendly='⏱ Timeout — try shorter text';
+      else friendly='❌ Error '+res.status+': '+em;
+      showToast(friendly);
+      document.getElementById('kDot').className='dot err';
+      const tr=document.getElementById('testResult');
+      tr.style.display='block'; tr.style.background='rgba(224,112,112,.1)';
+      tr.style.border='1px solid rgba(224,112,112,.25)'; tr.style.color='var(--err)';
+      tr.innerHTML='<strong>OpenAI error (part '+(i+1)+'):</strong><br><pre style="margin-top:6px;font-size:10px;white-space:pre-wrap;word-break:break-all">'+esc(fullErr||'HTTP '+res.status)+'</pre>';
+      btn.disabled=false; spin.style.display='none'; lbl.textContent='▶ Generate Audio';
+      return;
+    }
+    const blob = await res.blob();
+    blobs.push(blob);
+  }
+
+  /* merge all blobs into one */
+  const finalBlob = blobs.length===1 ? blobs[0] : new Blob(blobs, {type:'audio/mpeg'});
+  const url = URL.createObjectURL(finalBlob);
+
+  addClip({id:++idC, title, text, voice:aiVoice, model:aiModel, isBrowser:false, url, blob:finalBlob, speed:spd, date:new Date()});
+  showToast(total>1 ? `✅ Done! ${total} parts merged into one clip.` : '✅ HD audio generated!', 'ok');
   document.getElementById('testResult').style.display='none';
   document.getElementById('txt').value='';
   document.getElementById('clipTitle').value='';
   document.getElementById('cc').textContent='0 / 4096';
+}
+
+/* split text into chunks ≤ maxLen, breaking at sentence ends */
+function splitText(text, maxLen){
+  if(text.length <= maxLen) return [text];
+  const sentences = text.match(/[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g) || [text];
+  const chunks = [];
+  let current = '';
+  for(const s of sentences){
+    const trimmed = s.trim();
+    if(!trimmed) continue;
+    if((current+' '+trimmed).trim().length <= maxLen){
+      current = (current+' '+trimmed).trim();
+    } else {
+      if(current) chunks.push(current.trim());
+      /* if single sentence > maxLen, hard-split by words */
+      if(trimmed.length > maxLen){
+        const words = trimmed.split(' ');
+        let part = '';
+        for(const w of words){
+          if((part+' '+w).trim().length <= maxLen){
+            part = (part+' '+w).trim();
+          } else {
+            if(part) chunks.push(part);
+            part = w;
+          }
+        }
+        if(part) current = part;
+        else current = '';
+      } else {
+        current = trimmed;
+      }
+    }
+  }
+  if(current) chunks.push(current.trim());
+  return chunks.filter(c=>c.length>0);
 }
 
 async function testKey(){
@@ -397,8 +553,33 @@ function toggleText(id){
   }
 }
 
-function addClip(clip){clips.unshift(clip);updCount();renderClips(clips);}
-function updCount(){const n=clips.length;document.getElementById('libCount').textContent=n+(n===1?' clip':' clips');}
+function addClip(clip){
+  clips.unshift(clip);
+  updCount();
+  renderClips(clips);
+  dbSave(clip).catch(e=>console.warn('DB save failed:',e));
+}
+function updCount(){
+  const n=clips.length;
+  document.getElementById('libCount').textContent=n+(n===1?' clip':' clips');
+  const badge=document.getElementById('dbBadge');
+  if(badge) badge.style.display = n>0 ? 'inline-block' : 'none';
+}
+
+async function clearAll(){
+  if(!clips.length)return;
+  if(!confirm('Delete all '+clips.length+' saved clip'+(clips.length>1?'s':'')+' from this browser?'))return;
+  clips.forEach(c=>stopClip(c.id));
+  clips=[];
+  /* clear IndexedDB store */
+  if(db){
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).clear();
+  }
+  updCount();
+  renderClips([]);
+  showToast('All clips deleted.','ok');
+}
 
 function renderClips(list){
   const ct=document.getElementById('clips');
@@ -545,7 +726,13 @@ function dlClip(id){
   document.body.removeChild(a);
   showToast('💾 Saving: '+safeName+'.mp3','ok');
 }
-function delClip(id){stopClip(id);clips=clips.filter(c=>c.id!==id);updCount();renderClips(clips);}
+function delClip(id){
+  stopClip(id);
+  clips=clips.filter(c=>c.id!==id);
+  updCount();
+  renderClips(clips);
+  dbDelete(id).catch(e=>console.warn('DB delete failed:',e));
+}
 function filterClips(q){const lq=q.toLowerCase();renderClips(clips.filter(c=>c.title.toLowerCase().includes(lq)||c.text.toLowerCase().includes(lq)||c.voice.toLowerCase().includes(lq)));}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtS(s){if(isNaN(s)||!isFinite(s))return'–:––';const m=Math.floor(s/60);return m+':'+(Math.floor(s%60)+'').padStart(2,'0');}
@@ -554,6 +741,9 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey&&e.key==='Enter'){e.preventDefault();generate();}
   if(e.key===' '&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'&&e.target.tagName!=='BUTTON'&&activeId){e.preventDefault();togglePlay(activeId);}
 });
+
+/* start IndexedDB and restore saved clips on load */
+initDB();
 </script>
 </body>
 </html>
